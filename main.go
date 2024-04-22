@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
@@ -18,8 +20,15 @@ type User struct {
 	Email    string `gorm:"unique" json:"email"`
 	Password string `json:"password"`
 }
+type RequestLogin struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
 
 func main() {
+	// test ----------------------------------------------------------------
+	testFunc()
+	// --------------------------------------------------------------------
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal(err)
@@ -44,65 +53,217 @@ func main() {
 
 	// Route ----------------------------------------------------------------
 	router := gin.Default()
+	// Middleware สำหรับตรวจสอบ token
+	authMiddleware := func(c *gin.Context) {
+		// อ่าน token จาก Header ของ Request
+		tokenString := c.GetHeader("Authorization")
+		if tokenString == "" {
+			// ถ้าไม่มี token ใน Header หยุดการทำงานและส่งข้อความผิดพลาดกลับ
+			c.JSON(401, gin.H{"error": "Authorization header is required"})
+			c.Abort() // หยุดการดำเนินการต่อ
+			return
+		}
+
+		// ตรวจสอบและแปลง token
+		claims, err := parseToken(tokenString)
+		if err != nil {
+			// หยุดการทำงานและส่งข้อความผิดพลาดกลับหาผู้ใช้
+			c.JSON(401, gin.H{"error": "Invalid token"})
+			c.Abort() // หยุดการดำเนินการต่อ
+			return
+		}
+
+		// เพิ่ม claims ใน Context เพื่อให้มันใช้ได้ในเส้นทางถัดไป
+		c.Set("claims", claims)
+	}
 
 	router.GET("/hello", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"message": "Hello, Gin!",
 		})
 	})
-
-	router.POST("/users", func(c *gin.Context) {
-		user := User{}
-		if err := c.BindJSON(&user); err != nil {
-			c.JSON(400, gin.H{"error": "Invalid request"})
+	// เส้นทาง GET ที่ต้องตรวจสอบ token
+	router.GET("/auth", func(c *gin.Context) {
+		// อ่าน token จาก Header ของ Request
+		tokenString := c.GetHeader("Authorization")
+		if tokenString == "" {
+			// ถ้าไม่มี token ใน Header หยุดการทำงานและส่งข้อความผิดพลาดกลับ
+			c.JSON(401, gin.H{"error": "Authorization header is required"})
 			return
 		}
-		// Hash password
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+
+		// ตรวจสอบและแปลง token
+		claims, err := parseToken(tokenString)
 		if err != nil {
-			c.JSON(500, gin.H{"error": "Failed to hash password"})
-			return
-		}
-		user.Password = string(hashedPassword)
-		if err := CreateUser(db, &user); err != nil {
-			c.JSON(500, gin.H{"error": "Failed to create user"})
-			return
-		}
-		user.Password = ""
-		c.JSON(201, gin.H{"message": "User created successfully", "user": user})
-	})
-	router.GET("/users", func(c *gin.Context) {
-		var users []User
-		if err := db.Find(&users).Error; err != nil {
-			c.JSON(500, gin.H{"error": "Failed to fetch users"})
+			// หยุดการทำงานและส่งข้อความผิดพลาดกลับหาผู้ใช้
+			c.JSON(401, gin.H{"error": "Invalid token"})
 			return
 		}
 
-		// สร้างข้อมูลผู้ใช้ที่ไม่รวมฟิลด์รหัสผ่าน
-		var response []gin.H
-		for _, user := range users {
-			response = append(response, gin.H{
+		// สามารถใช้ claims ที่ได้รับจาก token ในการตรวจสอบสิทธิ์หรือดำเนินการต่อไป
+		// ตัวอย่างเช่น:
+		userID := claims["userID"]
+		// ดำเนินการต่อไปตามต้องการ
+		c.JSON(200, gin.H{"message": "Welcome, user with ID " + fmt.Sprint(userID)})
+	})
+
+	userGroup := router.Group("/")
+	userGroup.Use(authMiddleware)
+	{
+		router.POST("/user", func(c *gin.Context) {
+			user := User{}
+			if err := c.BindJSON(&user); err != nil {
+				c.JSON(400, gin.H{"error": "Invalid request"})
+				return
+			}
+			// Hash password
+			hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+			if err != nil {
+				c.JSON(500, gin.H{"error": "Failed to hash password"})
+				return
+			}
+			user.Password = string(hashedPassword)
+			if err := CreateUser(db, &user); err != nil {
+				c.JSON(500, gin.H{"error": "Failed to create user"})
+				return
+			}
+			response := gin.H{
 				"id":       user.ID,
 				"username": user.Username,
 				"email":    user.Email,
-			})
+			}
+			c.JSON(201, gin.H{"message": "User created successfully", "user": response})
+		})
+
+		router.GET("/users", func(c *gin.Context) {
+			// อ่าน claims จาก Context
+			c.Get("claims")
+
+			var users []User
+			if err := db.Find(&users).Error; err != nil {
+				c.JSON(500, gin.H{"error": "Failed to fetch users"})
+				return
+			}
+
+			// สร้างข้อมูลผู้ใช้ที่ไม่รวมฟิลด์รหัสผ่าน
+			var response []gin.H
+			for _, user := range users {
+				response = append(response, gin.H{
+					"id":       user.ID,
+					"username": user.Username,
+					"email":    user.Email,
+				})
+			}
+			c.JSON(200, response)
+		})
+
+		router.GET("/user/:id", func(c *gin.Context) {
+			var user User
+			id := c.Param("id")
+			if err := db.First(&user, id).Error; err != nil {
+
+				c.JSON(404, gin.H{"error": fmt.Sprintf("User id is %s not found", id)})
+				return
+			}
+			// สร้างข้อมูลผู้ใช้ที่ไม่รวมฟิลด์รหัสผ่าน
+			response := gin.H{
+				"id":       user.ID,
+				"username": user.Username,
+				"email":    user.Email,
+			}
+
+			c.JSON(200, response)
+		})
+
+		router.PATCH("/user/:id", func(c *gin.Context) {
+			user := User{}
+			id := c.Param("id")
+
+			// ค้นหาผู้ใช้จาก ID
+			if err := db.First(&user, id).Error; err != nil {
+				c.JSON(404, gin.H{"error": "User not found"})
+				return
+			}
+
+			// รับข้อมูลการอัปเดตจากผู้ใช้
+			updateData := User{}
+			if err := c.BindJSON(&updateData); err != nil {
+				c.JSON(400, gin.H{"error": "Invalid request"})
+				return
+			}
+
+			if updateData.Password != "" {
+				// Hash password
+				hashedPassword, err := bcrypt.GenerateFromPassword([]byte(updateData.Password), bcrypt.DefaultCost)
+				if err != nil {
+					c.JSON(500, gin.H{"error": "Failed to hash password"})
+					return
+				}
+				updateData.Password = string(hashedPassword)
+			}
+
+			// อัปเดตข้อมูลผู้ใช้
+			db.Model(&user).Updates(updateData)
+
+			c.JSON(200, gin.H{"message": "User updated successfully"})
+		})
+		router.DELETE("/user/:id", func(c *gin.Context) {
+			user := User{}
+			id := c.Param("id")
+
+			// ค้นหาผู้ใช้จาก ID
+			if err := db.First(&user, id).Error; err != nil {
+				c.JSON(404, gin.H{"error": "User not found"})
+				return
+			}
+			// Delete user by ID
+			if err := db.Delete(&User{}, id).Error; err != nil {
+				// Handle error
+				c.JSON(500, gin.H{"error": "Failed to delete user"})
+				return
+			}
+
+			c.JSON(200, gin.H{"message": "User deleted successfully"})
+		})
+
+	}
+
+	router.POST("/auth/login", func(c *gin.Context) {
+		user := User{}
+
+		body := RequestLogin{}
+		if err := c.BindJSON(&body); err != nil {
+			c.JSON(400, gin.H{"error": "Invalid request"})
+			return
 		}
-		c.JSON(200, response)
-	})
-	router.GET("/users/:id", func(c *gin.Context) {
-		var user User
-		id := c.Param("id")
-		if err := db.First(&user, id).Error; err != nil {
+
+		// ค้นหาผู้ใช้จาก Username
+		if err := db.Where("username = ?", body.Username).First(&user).Error; err != nil {
+			// Handle error
 			c.JSON(404, gin.H{"error": "User not found"})
 			return
 		}
-		// สร้างข้อมูลผู้ใช้ที่ไม่รวมฟิลด์รหัสผ่าน
+
+		err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password))
+		if err != nil {
+			c.JSON(400, gin.H{"error": "Failed password"})
+			return
+		}
+
+		token, err := createToken(int(user.ID))
+		if err != nil {
+			// ไม่สามารถสร้าง Token ได้
+			panic(err)
+		}
+
 		response := gin.H{
 			"id":       user.ID,
 			"username": user.Username,
 			"email":    user.Email,
+			"token":    token,
 		}
 
+		// Found user
 		c.JSON(200, response)
 	})
 
@@ -111,10 +272,55 @@ func main() {
 	router.Run(":" + runPort)
 }
 
+// Func User -------------------------------------------------------------
 func CreateUser(db *gorm.DB, user *User) error {
 	result := db.Create(user)
 	if result.Error != nil {
 		return result.Error
 	}
 	return nil
+}
+
+// JWT ----------------------------------------------------------------
+var secretKey = []byte("secret-Tset-Go") // กำหนดคีย์ลับสำหรับเซ็น JWT
+
+func createToken(userID int) (string, error) {
+	// สร้างข้อมูลสำหรับ JWT
+	token := jwt.New(jwt.SigningMethodHS256)
+
+	// กำหนดเอกสาร (claim) ใน JWT
+	claims := token.Claims.(jwt.MapClaims)
+	claims["userID"] = userID
+	claims["exp"] = time.Now().Add(time.Hour * 24).Unix() // กำหนดเวลาหมดอายุของ Token เป็น 24 ชั่วโมง
+
+	// ลายเซ็น JWT ด้วยคีย์ลับ
+	signedToken, err := token.SignedString(secretKey)
+	if err != nil {
+		return "", err
+	}
+
+	return signedToken, nil
+}
+
+func parseToken(tokenString string) (jwt.MapClaims, error) {
+	// ตรวจสอบ Token และแปลงเป็น claim
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return secretKey, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// ตรวจสอบว่า Token ถูกต้องหรือไม่
+	if !token.Valid {
+		return nil, jwt.ErrSignatureInvalid
+	}
+
+	// แปลง claim ให้เป็น MapClaims
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, jwt.ErrInvalidKeyType
+	}
+
+	return claims, nil
 }
