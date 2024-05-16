@@ -1,5 +1,0 @@
-Run file main
-nodemon --exec go run main.go --signal SIGTERM 
-
-Run file all files
-nodemon --exec go run . --signal SIGTERM 

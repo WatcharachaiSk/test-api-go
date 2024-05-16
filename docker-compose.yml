@@ -6,8 +6,8 @@ services:
     container_name: pg_go
     restart: unless-stopped
     environment:
-      POSTGRES_USER: gorood
-      POSTGRES_PASSWORD: gopassword
+      POSTGRES_USER: go_rood
+      POSTGRES_PASSWORD: go_password
       POSTGRES_DB: pg_go
       TZ: "UTC"
       PGTZ: "UTC"
@@ -15,3 +15,8 @@ services:
       - 5432:5432
     networks:
       - default
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

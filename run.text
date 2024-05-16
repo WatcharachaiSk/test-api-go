@@ -1,0 +1,17 @@
+Run file main
+nodemon --exec go run main.go --signal SIGTERM 
+
+Run file all files
+nodemon --exec go run . --signal SIGTERM 
+
+package
+https://pkg.go.dev/
+
+init 
+go mod init github.com/watcharachai/fiber-db
+
+PQ
+go get github.com/lib/pq
+
+Fiber
+go get github.com/gofiber/fiber/v2
