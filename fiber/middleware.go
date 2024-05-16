@@ -1,18 +1,16 @@
 package main
 
 import (
-	"fmt"
-	"time"
-
 	"github.com/gofiber/fiber/v2"
 )
 
-func checkMiddleware(c *fiber.Ctx) error {
-	// Start timer
-	start := time.Now()
-	// ใช้ฟังก์ชัน Format เพื่อแปลง time.Time เป็นสตริง
-	formattedTime := start.Format("2006-01-02 15:04:05")
-	fmt.Printf("URL = %s, Method = %s, Time = %s \n", c.OriginalURL(), c.Method(), formattedTime)
+// isAdmin checks if the user is an admin
+func isAdmin(c *fiber.Ctx) error {
+	user := c.Locals(userContextKey).(*UserData)
+
+	if user.Role != "admin" {
+		return fiber.ErrUnauthorized
+	}
 
 	return c.Next()
 }

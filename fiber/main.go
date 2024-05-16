@@ -16,9 +16,9 @@ func main() {
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
-	prot := os.Getenv("DATABASE_PORT")
+	db_prot := os.Getenv("DATABASE_PORT")
 	// JWT Secret Key
-	println(prot)
+	println(db_prot)
 
 	// Fiber
 	app := fiber.New()
@@ -30,17 +30,23 @@ func main() {
 	}))
 
 	app.Post("/login", login)
-	// Setup routes
-	app.Use(checkMiddleware)
+
 	// JWT Middleware
 	app.Use(jwtware.New(jwtware.Config{
 		SigningKey: []byte(os.Getenv("SECRET")),
 	}))
-	app.Get("/users", getUsers)
-	app.Get("/user/:id", getUser)
-	app.Post("/user", createUser)
-	app.Put("/user/:id", updateUser)
-	app.Delete("/user/:id", deleteUser)
+
+	userGroups := app.Group("/user")
+
+	// Middleware to extract user data from JWT
+	userGroups.Use(extractUserFromJWT)
+	userGroups.Get("/", getUsers)
+	userGroups.Get("/:id", getUser)
+	// Setup routes
+	userGroups.Use(isAdmin)
+	userGroups.Post("/", createUser)
+	userGroups.Put("/:id", updateUser)
+	userGroups.Delete("/:id", deleteUser)
 
 	app.Get("/hello", func(c *fiber.Ctx) error {
 		return c.SendString("Hello World")

@@ -2,18 +2,16 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strconv"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v4"
 )
 
 type User struct {
 	ID       int    `json:"id"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+	Role     string `json:"role"`
 }
 
 type ReqUser struct {
@@ -22,8 +20,8 @@ type ReqUser struct {
 }
 
 var users []User = []User{
-	{ID: 1, Username: "rootUser1", Password: "rootPassword1"},
-	{ID: 2, Username: "rootUser2", Password: "rootPassword2"},
+	{ID: 1, Username: "rootUser1", Password: "rootPassword1", Role: "admin"},
+	{ID: 2, Username: "rootUser2", Password: "rootPassword2", Role: "user"},
 }
 
 func login(c *fiber.Ctx) error {
@@ -34,44 +32,19 @@ func login(c *fiber.Ctx) error {
 	}
 
 	for _, user := range users {
+		fmt.Println(user)
 		if user.Username == reqUser.Username && user.Password == reqUser.Password {
-			token, err := createToken(user.ID, user.Username)
-			println(token)
+			token, err := createToken(user.ID, user.Username, user.Role)
 			if err != nil {
 				return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 			}
 			return c.JSON(fiber.Map{"token": token})
 		}
-		if user.Username != reqUser.Username || user.Password != reqUser.Password {
-			return fiber.ErrUnauthorized
-		}
 	}
 
-	return c.Status(fiber.StatusNotFound).SendString("user not found")
+	return fiber.ErrUnauthorized
 }
 
-func createToken(id int, username string) (string, error) {
-	// Create token
-	token := jwt.New(jwt.SigningMethodHS256)
-	secretKey := os.Getenv("SECRET")
-	if secretKey == "" {
-		return "", fmt.Errorf("SECRET environment variable not set")
-	}
-
-	// Set claims
-	claims := token.Claims.(jwt.MapClaims)
-	claims["id"] = id
-	claims["username"] = username // correct variable name
-	claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
-
-	// Generate encoded token
-	t, err := token.SignedString([]byte(secretKey))
-	if err != nil {
-		return "", err
-	}
-
-	return t, nil
-}
 func getUsers(c *fiber.Ctx) error {
 	return c.JSON(users)
 }
