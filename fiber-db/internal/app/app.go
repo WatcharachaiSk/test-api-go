@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/watcharachai/fiber-db/internal/database"
+	"github.com/watcharachai/fiber-db/internal/model"
 	"github.com/watcharachai/fiber-db/internal/router"
 	"github.com/watcharachai/fiber-db/pkg/config"
 )
@@ -14,6 +15,7 @@ import (
 func Start() {
 	cfg := config.GetConfig()
 	database.Connect()
+	model.MigrationDB()
 
 	app := fiber.New()
 
