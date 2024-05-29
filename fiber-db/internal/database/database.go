@@ -2,34 +2,34 @@
 package database
 
 import (
-	"database/sql"
 	"fmt"
-	"log"
 
-	_ "github.com/lib/pq"
 	"github.com/watcharachai/fiber-db/pkg/config"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
+
+var DB *gorm.DB
 
 func Connect() {
 	cfg := config.GetConfig()
 
+	host := cfg.DBHost         // or the Docker service name if running in another container
+	port := cfg.DBPort         // default PostgreSQL port
+	username := cfg.DBUsername // as defined in docker-compose.yml
+	password := cfg.DBPassword // as defined in docker-compose.yml
+	dbname := cfg.DBName       // as defined in docker-compose.yml
+
 	// Connection string
-	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+	dsn := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
-		cfg.DBHost, cfg.DBPort, cfg.DBUsername, cfg.DBPassword, cfg.DBName)
+		host, port, username, password, dbname)
 
-	// Open a connection
-	db, err := sql.Open("postgres", psqlInfo)
+	var err error
+	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-
-	// Check the connection
-	err = db.Ping()
-	if err != nil {
-		log.Fatal(err)
+		panic("Failed to connect to database: ")
 	}
 
-	fmt.Println("Successfully connected!")
+	fmt.Println("Database Successfully connected!")
 }
